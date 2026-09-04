@@ -38,7 +38,7 @@ DATA = {
 C_AMARI, C_CANON = "#6b7280", "#b0224b"
 
 # equal-height panels, near-flush so the shared divergence axis reads as one figure
-fig = plt.figure(figsize=(8.4, 6.4))
+fig = plt.figure(figsize=(10.6, 5.0))
 gs = fig.add_gridspec(2, 1, height_ratios=(1, 1), hspace=0.06)
 axT = fig.add_subplot(gs[0])
 axB = fig.add_subplot(gs[1], sharex=axT)
@@ -53,15 +53,15 @@ for i, d in enumerate(DIVS):
                  elinewidth=1.3, capsize=3, zorder=5)
     axT.errorbar(i, cw, yerr=[[clo], [chi]], fmt="o", ms=8, color=C_CANON, ecolor=C_CANON,
                  elinewidth=1.3, capsize=3, zorder=6)
-    axT.text(i - 0.16, aw, f"{aw:.1f}", color=C_AMARI, fontsize=9, va="center", ha="right")
-    axT.text(i - 0.16, cw, f"{cw:.1f}", color=C_CANON, fontsize=9, va="center", ha="right", fontweight="bold")
+    axT.text(i - 0.10, aw, f"{aw:.1f}", color=C_AMARI, fontsize=9, va="center", ha="right")
+    axT.text(i - 0.10, cw, f"{cw:.1f}", color=C_CANON, fontsize=9, va="center", ha="right", fontweight="bold")
 
 # bottom: Canonical vs Amari head-on, coloured per divergence; 50% = tie is the axis floor
 for i, d in enumerate(DIVS):
     _, _, h = DATA[d]
     bcol = COLORS[BAR_KEYS[i]]
     hw, (hlo, hhi) = h
-    axB.bar(i, hw, width=0.62, facecolor=bcol, alpha=0.24, edgecolor=bcol, linewidth=1.4, zorder=2)
+    axB.bar(i, hw, width=0.52, facecolor=bcol, alpha=0.24, edgecolor=bcol, linewidth=1.4, zorder=2)
     axB.errorbar(i, hw, yerr=[[hw - hlo], [hhi - hw]], fmt="none", ecolor=bcol, elinewidth=1.4,
                  capsize=3, alpha=0.9, zorder=3)
     axB.text(i, hhi + 0.5, f"{hw:.1f}", color=bcol, fontsize=9, va="bottom", ha="center", fontweight="bold")
