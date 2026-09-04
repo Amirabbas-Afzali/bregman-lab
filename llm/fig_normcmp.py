@@ -39,7 +39,8 @@ C_AMARI, C_CANON = "#6b7280", "#b0224b"
 
 # equal-height panels, near-flush so the shared divergence axis reads as one figure
 fig = plt.figure(figsize=(10.6, 5.0))
-gs = fig.add_gridspec(2, 1, height_ratios=(1, 1), hspace=0.06)
+gs = fig.add_gridspec(2, 1, height_ratios=(1, 1), hspace=0.06,
+                      left=0.085, right=0.985, top=0.825, bottom=0.085)
 axT = fig.add_subplot(gs[0])
 axB = fig.add_subplot(gs[1], sharex=axT)
 x = list(range(len(DIVS)))
@@ -83,9 +84,10 @@ legend = [Line2D([0], [0], marker="o", color="w", markerfacecolor=C_CANON, ms=9,
                  label="Canonical (Ours)  $f'(1)=f''(1)$"),
           Line2D([0], [0], marker="o", color="w", markerfacecolor=C_AMARI, ms=9,
                  label="Amari  $f'(1)=0$")]
-axT.legend(handles=legend, loc="upper center", bbox_to_anchor=(0.5, 1.16), ncol=2, fontsize=9.5,
-           frameon=True, columnspacing=1.6, handletextpad=0.5)
+# title on top, legend on its own band beneath it — both clear of the axes frame
 fig.suptitle("Arena-Hard Results", fontsize=13.5, y=0.985)
+fig.legend(handles=legend, loc="upper center", bbox_to_anchor=(0.5, 0.925), ncol=2, fontsize=9.5,
+           frameon=True, framealpha=0.95, edgecolor="#bbbbbb", columnspacing=1.8, handletextpad=0.5)
 
 out = "results/stageB_normcmp_wr_h2h"
 for ext in ("png", "pdf"):
