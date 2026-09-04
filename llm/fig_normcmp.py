@@ -80,15 +80,15 @@ for ax in (axT, axB):
     ax.set_axisbelow(True)
     ax.grid(axis="y", alpha=0.18)
 
-legend = [Line2D([0], [0], marker="o", color="w", markerfacecolor=C_CANON, ms=12,
+legend = [Line2D([0], [0], marker="o", color="w", markerfacecolor=C_CANON, ms=10,
                  label="Canonical (Ours)  $f'(1)=f''(1)$"),
-          Line2D([0], [0], marker="o", color="w", markerfacecolor=C_AMARI, ms=12,
+          Line2D([0], [0], marker="o", color="w", markerfacecolor=C_AMARI, ms=10,
                  label="Amari  $f'(1)=0$")]
 # title on top, legend on its own band beneath it — both clear of the axes frame
 fig.suptitle("Arena-Hard Results", fontsize=13.5, y=0.985)
-fig.legend(handles=legend, loc="upper center", bbox_to_anchor=(0.5, 0.945), ncol=2, fontsize=13,
-           frameon=True, framealpha=0.95, edgecolor="#bbbbbb", columnspacing=2.4, handletextpad=0.7,
-           borderpad=0.7, labelspacing=0.6)
+fig.legend(handles=legend, loc="upper center", bbox_to_anchor=(0.5, 0.935), ncol=2, fontsize=11,
+           frameon=True, framealpha=0.95, edgecolor="#bbbbbb", columnspacing=2.2, handletextpad=0.6,
+           borderpad=0.6, labelspacing=0.5)
 
 out = "results/stageB_normcmp_wr_h2h"
 for ext in ("png", "pdf"):
