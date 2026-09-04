@@ -36,6 +36,10 @@ FIGS = {
                                     "fig_permissibility_wr.py · llm/results/bench/arena_v01/divergence_wr.json"),
     "fL2_head_to_head":            ("llm/results/stageB_divergence_h2h",
                                     "fig_permissibility_h2h.py · llm/results/bench/arena_v01/h2h/*.json"),
+    "fL3_normcmp_wr_h2h":          ("llm/results/stageB_normcmp_wr_h2h",
+                                    "fig_normcmp.py — canonical(f'=f'') vs Amari(f'=0) on Arena-Hard v0.1, "
+                                    "judge gpt-4.1-mini-2025-04-14, 500 prompts; baseline WR from arena-hard-auto "
+                                    "show_result.py, head-to-head from pairwise_h2h.py"),
 }
 
 
