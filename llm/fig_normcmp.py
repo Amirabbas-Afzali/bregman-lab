@@ -68,9 +68,9 @@ for i, d in enumerate(DIVS):
     axB.text(i, hhi + 0.5, f"{hw:.1f}", color=bcol, fontsize=9, va="bottom", ha="center", fontweight="bold")
 
 # judge provenance in each panel's empty top-right strip (text only, no frame)
-axT.text(0.99, 0.97, "Judge: gpt-4.1-mini-2025-04-14  ·  500 Arena-Hard v0.1 prompts",
+axT.text(0.99, 0.97, "Judge: gpt-4.1-mini-2025-04-14",
          transform=axT.transAxes, ha="right", va="top", fontsize=8.5, color="#666666")
-axB.text(0.99, 0.97, "Judge: gpt-4.1-mini-2025-04-14  ·  2 games per prompt",
+axB.text(0.99, 0.97, "Judge: gpt-4.1-mini-2025-04-14",
          transform=axB.transAxes, ha="right", va="top", fontsize=8.5, color="#666666")
 
 # integer ticks every 2 pts (7-15) with a little headroom so no CI cap is clipped
