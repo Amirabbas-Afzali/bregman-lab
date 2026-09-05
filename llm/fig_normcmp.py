@@ -3,8 +3,11 @@
 Two stacked panels sharing the divergence axis:
   top    — Arena-Hard v0.1 win rate against the fixed baseline gpt-4-0314: Canonical (dark red,
            f'(1)=f''(1)) vs Amari (grey, f'(1)=0), with 95% bootstrap CIs.
-  bottom — the direct Canonical-vs-Amari win rate (50% = tie), bars coloured with each divergence's
-           shared palette colour, 95% prompt-level bootstrap CI.
+  bottom — the direct Canonical-vs-Amari win rate (50% = tie) as a box per divergence: median line at
+           the point estimate, whiskers at the 95% prompt-level bootstrap CI, box at the interquartile
+           range. The per-prompt judgements live on the cluster, so the IQR is recovered from the
+           reported CI under a normal approximation (Z50/Z95 below) — the CIs are symmetric to ~0.2pt,
+           so the bootstrap distribution is near-Gaussian and the box is a faithful summary.
 Judge: gpt-4.1-mini-2025-04-14 (validated ≈ gpt-4.1), 500 Arena-Hard v0.1 prompts.
 
 Divergences are in the canonical REGKEYS order (RKL, α-div, FKL, JS, Hel, χ²), matching the tabular figures.
@@ -57,28 +60,43 @@ for i, d in enumerate(DIVS):
     axT.text(i - 0.10, aw, f"{aw:.1f}", color=C_AMARI, fontsize=9, va="center", ha="right")
     axT.text(i - 0.10, cw, f"{cw:.1f}", color=C_CANON, fontsize=9, va="center", ha="right", fontweight="bold")
 
-# bottom: Canonical vs Amari head-on, coloured per divergence; 50% = tie is the axis floor
+# bottom: Canonical vs Amari head-on as a box per divergence; 50% = tie is the axis floor.
+# Only the summary (point estimate + 95% bootstrap CI) survives locally, so the quartiles come from
+# the CI's implied bootstrap SD — legitimate here because the CIs are symmetric to ~0.2pt.
+Z95, Z50 = 1.959964, 0.674490
+stats, cols = [], []
 for i, d in enumerate(DIVS):
     _, _, h = DATA[d]
-    bcol = COLORS[BAR_KEYS[i]]
     hw, (hlo, hhi) = h
-    axB.bar(i, hw, width=0.52, facecolor=bcol, alpha=0.24, edgecolor=bcol, linewidth=1.4, zorder=2)
-    axB.errorbar(i, hw, yerr=[[hw - hlo], [hhi - hw]], fmt="none", ecolor=bcol, elinewidth=1.4,
-                 capsize=3, alpha=0.9, zorder=3)
-    axB.text(i, hhi + 0.5, f"{hw:.1f}", color=bcol, fontsize=9, va="bottom", ha="center", fontweight="bold")
+    sd_lo, sd_hi = (hw - hlo) / Z95, (hhi - hw) / Z95
+    stats.append({"med": hw, "q1": hw - Z50 * sd_lo, "q3": hw + Z50 * sd_hi,
+                  "whislo": hlo, "whishi": hhi, "label": d})
+    cols.append(COLORS[BAR_KEYS[i]])
+
+bp = axB.bxp(stats, positions=x, widths=0.52, patch_artist=True, showfliers=False, zorder=2)
+for k, (box, med, col) in enumerate(zip(bp["boxes"], bp["medians"], cols)):
+    box.set(facecolor=col, alpha=0.24, edgecolor=col, linewidth=1.4)
+    med.set(color=col, linewidth=2.4, alpha=1.0)
+    for art in (bp["whiskers"][2 * k], bp["whiskers"][2 * k + 1], bp["caps"][2 * k], bp["caps"][2 * k + 1]):
+        art.set(color=col, linewidth=1.4, alpha=0.9)
+for i, d in enumerate(DIVS):
+    _, _, (hw, (hlo, hhi)) = DATA[d]
+    axB.text(i, hhi + 0.5, f"{hw:.1f}", color=COLORS[BAR_KEYS[i]], fontsize=9,
+             va="bottom", ha="center", fontweight="bold")
 
 # judge provenance in each panel's empty top-right strip (text only, no frame)
 axT.text(0.99, 0.97, "Judge: gpt-4.1-mini-2025-04-14",
          transform=axT.transAxes, ha="right", va="top", fontsize=8.5, color="#666666")
-axB.text(0.99, 0.97, "Judge: gpt-4.1-mini-2025-04-14",
-         transform=axB.transAxes, ha="right", va="top", fontsize=8.5, color="#666666")
+axB.text(0.99, 0.97, "Judge: gpt-4.1-mini-2025-04-14\nbox = IQR  ·  whiskers = 95% CI",
+         transform=axB.transAxes, ha="right", va="top", fontsize=8.5, color="#666666",
+         linespacing=1.5)
 
 # integer ticks every 2 pts (7-15) with a little headroom so no CI cap is clipped
 axT.set_ylim(6.0, 16.4); axT.set_yticks([7, 9, 11, 13, 15])
-axB.set_ylim(50, 70);    axB.set_yticks([50, 55, 60, 65, 70])
+axB.set_ylim(50, 72);    axB.set_yticks([50, 55, 60, 65, 70])   # headroom for the box note
 axT.set_xlim(-0.6, len(DIVS) - 0.4)
 axT.set_ylabel("Qwen 1.7B vs gpt-4\nWin Rate (%)", fontsize=11)
-axB.set_ylabel("Canonical vs Amari\nWin Rate (%)", fontsize=11)
+axB.set_ylabel("Qwen 1.7B\nCanonical vs Amari\nWin Rate (%)", fontsize=11)
 axB.set_xticks(x); axB.set_xticklabels(DIVS, fontsize=12)
 plt.setp(axT.get_xticklabels(), visible=False)
 axT.tick_params(axis="x", length=0)
