@@ -39,7 +39,9 @@ FIGS = {
     "fL3_normcmp_wr_h2h":          ("llm/results/stageB_normcmp_wr_h2h",
                                     "fig_normcmp.py — canonical(f'=f'') vs Amari(f'=0) on Arena-Hard v0.1, "
                                     "judge gpt-4.1-mini-2025-04-14, 500 prompts; baseline WR from arena-hard-auto "
-                                    "show_result.py, head-to-head from pairwise_h2h.py"),
+                                    "show_result.py, head-to-head boxes from the prompt-level bootstrap in "
+                                    "llm/results/bench/arena_v01/h2h_normcmp/*_mini2_raw.json (pairwise_h2h.py, "
+                                    "re-judged 2026-09-05 to keep the replicates)"),
 }
 
 

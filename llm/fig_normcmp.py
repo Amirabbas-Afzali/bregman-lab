@@ -3,11 +3,11 @@
 Two stacked panels sharing the divergence axis:
   top    — Arena-Hard v0.1 win rate against the fixed baseline gpt-4-0314: Canonical (dark red,
            f'(1)=f''(1)) vs Amari (grey, f'(1)=0), with 95% bootstrap CIs.
-  bottom — the direct Canonical-vs-Amari win rate (50% = tie) as a box per divergence: median line at
-           the point estimate, whiskers at the 95% prompt-level bootstrap CI, box at the interquartile
-           range. The per-prompt judgements live on the cluster, so the IQR is recovered from the
-           reported CI under a normal approximation (Z50/Z95 below) — the CIs are symmetric to ~0.2pt,
-           so the bootstrap distribution is near-Gaussian and the box is a faithful summary.
+  bottom — the direct Canonical-vs-Amari win rate as a box per divergence, read straight off the
+           prompt-level bootstrap in results/bench/arena_v01/h2h_normcmp/*_raw.json: median line at
+           the measured win rate, box at the bootstrap 25th-75th percentile, whiskers at its
+           2.5th-97.5th (the 95% CI). 50% would be a tie; every divergence sits well above it, so
+           the axis is zoomed past it.
 Judge: gpt-4.1-mini-2025-04-14 (validated ≈ gpt-4.1), 500 Arena-Hard v0.1 prompts.
 
 Divergences are in the canonical REGKEYS order (RKL, α-div, FKL, JS, Hel, χ²), matching the tabular figures.
@@ -16,6 +16,8 @@ Run from llm/:  python fig_normcmp.py   ->  results/stageB_normcmp_wr_h2h.{png,p
 Then `python export_for_paper.py` from the repo root copies it to figure4overleaf/fL3_normcmp_wr_h2h.*
 together with its provenance sidecar.
 """
+import json
+
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -28,15 +30,39 @@ plt.rcParams.update({"font.family": "serif", "font.size": 11,
 DIVS = ["RKL", "α-div", "FKL", "JS", "Hel", "χ²"]       # canonical REGKEYS order (kl,adiv,rkl,js,hel,chi2)
 BAR_KEYS = ["kl", "adiv", "rkl", "js", "hel", "chi2"]   # DIVS -> divergences.COLORS key (kl=RKL, rkl=FKL)
 
-# A: (amari_wr, (lo,hi) offsets) · B: (canon_wr, (lo,hi) offsets) · C: (canon-vs-amari win%, (lo,hi) absolute CI)
+# A: (amari_wr, (lo,hi) offsets) · B: (canon_wr, (lo,hi) offsets) — Arena-Hard v0.1 vs gpt-4-0314,
+# from arena-hard-auto show_result.py (Bradley-Terry bootstrap CI).
 DATA = {
-    "RKL":   ((8.4,  (1.1, 1.0)), (14.4, (1.4, 1.3)), (63.7, (60.4, 67.1))),
-    "α-div": ((9.7,  (1.1, 1.0)), (13.0, (1.3, 1.4)), (59.8, (56.3, 63.2))),
-    "FKL":   ((10.1, (1.2, 1.1)), (13.5, (1.3, 1.1)), (57.6, (53.9, 60.8))),
-    "JS":    ((10.3, (1.1, 1.3)), (13.7, (1.3, 1.4)), (58.2, (54.7, 61.6))),
-    "Hel":   ((9.8,  (1.2, 1.0)), (12.5, (1.2, 1.1)), (58.1, (54.5, 61.8))),
-    "χ²":    ((7.2,  (1.0, 0.9)), (13.5, (1.3, 1.2)), (61.8, (58.3, 65.4))),
+    "RKL":   ((8.4,  (1.1, 1.0)), (14.4, (1.4, 1.3))),
+    "α-div": ((9.7,  (1.1, 1.0)), (13.0, (1.3, 1.4))),
+    "FKL":   ((10.1, (1.2, 1.1)), (13.5, (1.3, 1.1))),
+    "JS":    ((10.3, (1.1, 1.3)), (13.7, (1.3, 1.4))),
+    "Hel":   ((9.8,  (1.2, 1.0)), (12.5, (1.2, 1.1))),
+    "χ²":    ((7.2,  (1.0, 0.9)), (13.5, (1.3, 1.2))),
 }
+
+# C: the direct head-to-head, taken from pairwise_h2h.py's own bootstrap replicates rather than a
+# summary, so the box shows the real distribution. Files hold AMARI's win rate; canonical is 1 - that.
+H2H_DIR = "results/bench/arena_v01/h2h_normcmp"
+H2H_KEY = {"RKL": "kl", "α-div": "adiv", "FKL": "fkl", "JS": "js", "Hel": "hel", "χ²": "chi2"}
+
+
+def pct(xs, p):
+    """p-quantile of a sorted list, linearly interpolated."""
+    i = p * (len(xs) - 1)
+    lo = int(i)
+    hi = min(lo + 1, len(xs) - 1)
+    return xs[lo] * (1 - (i - lo)) + xs[hi] * (i - lo)
+
+
+def h2h_box(div):
+    k = H2H_KEY[div]
+    summ = json.load(open(f"{H2H_DIR}/h2h_{k}_amari_vs_canon_mini2.json"))
+    boot = json.load(open(f"{H2H_DIR}/h2h_{k}_amari_vs_canon_mini2_raw.json"))["boot"]
+    canon = sorted(100.0 * (1.0 - b) for b in boot)      # amari replicate -> canonical replicate
+    return {"med": round(100 - summ["win_rate"], 1), "q1": pct(canon, 0.25), "q3": pct(canon, 0.75),
+            "whislo": pct(canon, 0.025), "whishi": pct(canon, 0.975), "label": div}
+
 
 C_AMARI, C_CANON = "#6b7280", "#b0224b"
 
@@ -50,7 +76,7 @@ x = list(range(len(DIVS)))
 
 # top: win rate against the fixed gpt-4-0314 baseline (no connector — the pair reads from the colour)
 for i, d in enumerate(DIVS):
-    a, c, _ = DATA[d]
+    a, c = DATA[d]
     aw, (alo, ahi) = a
     cw, (clo, chi) = c
     axT.errorbar(i, aw, yerr=[[alo], [ahi]], fmt="o", ms=8, color=C_AMARI, ecolor=C_AMARI,
@@ -60,18 +86,9 @@ for i, d in enumerate(DIVS):
     axT.text(i - 0.10, aw, f"{aw:.1f}", color=C_AMARI, fontsize=9, va="center", ha="right")
     axT.text(i - 0.10, cw, f"{cw:.1f}", color=C_CANON, fontsize=9, va="center", ha="right", fontweight="bold")
 
-# bottom: Canonical vs Amari head-on as a box per divergence; 50% = tie is the axis floor.
-# Only the summary (point estimate + 95% bootstrap CI) survives locally, so the quartiles come from
-# the CI's implied bootstrap SD — legitimate here because the CIs are symmetric to ~0.2pt.
-Z95, Z50 = 1.959964, 0.674490
-stats, cols = [], []
-for i, d in enumerate(DIVS):
-    _, _, h = DATA[d]
-    hw, (hlo, hhi) = h
-    sd_lo, sd_hi = (hw - hlo) / Z95, (hhi - hw) / Z95
-    stats.append({"med": hw, "q1": hw - Z50 * sd_lo, "q3": hw + Z50 * sd_hi,
-                  "whislo": hlo, "whishi": hhi, "label": d})
-    cols.append(COLORS[BAR_KEYS[i]])
+# bottom: Canonical vs Amari head-on, one box per divergence from the bootstrap replicates
+stats = [h2h_box(d) for d in DIVS]
+cols = [COLORS[k] for k in BAR_KEYS]
 
 bp = axB.bxp(stats, positions=x, widths=0.52, patch_artist=True, showfliers=False, zorder=2)
 for k, (box, med, col) in enumerate(zip(bp["boxes"], bp["medians"], cols)):
@@ -79,9 +96,8 @@ for k, (box, med, col) in enumerate(zip(bp["boxes"], bp["medians"], cols)):
     med.set(color=col, linewidth=2.4, alpha=1.0)
     for art in (bp["whiskers"][2 * k], bp["whiskers"][2 * k + 1], bp["caps"][2 * k], bp["caps"][2 * k + 1]):
         art.set(color=col, linewidth=1.4, alpha=0.9)
-for i, d in enumerate(DIVS):
-    _, _, (hw, (hlo, hhi)) = DATA[d]
-    axB.text(i, hhi + 0.5, f"{hw:.1f}", color=COLORS[BAR_KEYS[i]], fontsize=9,
+for st, col in zip(stats, cols):
+    axB.text(DIVS.index(st["label"]), st["whishi"] + 0.5, f"{st['med']:.1f}", color=col, fontsize=9,
              va="bottom", ha="center", fontweight="bold")
 
 # judge provenance in each panel's empty top-right strip (text only, no frame)
