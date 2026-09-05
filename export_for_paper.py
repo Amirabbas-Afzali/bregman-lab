@@ -42,6 +42,11 @@ FIGS = {
                                     "show_result.py, head-to-head boxes from the prompt-level bootstrap in "
                                     "llm/results/bench/arena_v01/h2h_normcmp/*_mini2_raw.json (pairwise_h2h.py, "
                                     "re-judged 2026-09-05 to keep the replicates)"),
+    "fL3new_normcmp_wr_prompts":   ("llm/results/stageB_normcmp_wr_prompts",
+                                    "fig_normcmp.py --bottom mix — same top panel as fL3; bottom is how "
+                                    "the 500 Arena-Hard prompts actually split once each is judged twice "
+                                    "with the positions swapped (canonical both / no consistent winner / "
+                                    "amari both), from h2h_normcmp/*_mini2_raw.json"),
 }
 
 
