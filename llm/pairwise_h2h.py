@@ -4,6 +4,9 @@ temp 0). Two games per prompt with position swap (A/B), then A's win rate vs B =
 with a prompt-level bootstrap CI. Does NOT touch the arena repo.
 
     python pairwise_h2h.py --a kl_bdpo --b rkl_bdpo --out logs/h2h_rkl_fkl.json
+
+Writes the summary to --out and the per-prompt outcomes + the 1000 bootstrap replicates to
+<out>_raw.json, so quartiles/other CI levels can be recomputed without paying for the judge again.
 """
 import json, os, re, argparse, time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -160,6 +163,13 @@ def main():
            "win_rate": round(wr * 100, 1), "ci_lo": round(lo * 100, 1), "ci_hi": round(hi * 100, 1)}
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
     json.dump(out, open(args.out, "w"), indent=2)
+
+    # companion raw file: the summary alone cannot be re-analysed (a box plot needs quartiles, a
+    # different CI level needs the replicates), and re-judging costs ~1000 API calls. Keep both.
+    raw_path = re.sub(r"\.json$", "", args.out) + "_raw.json"
+    json.dump({"a": args.a, "b": args.b, "judge": H2H_JUDGE,
+               "per_prompt": per_prompt, "boot": boot}, open(raw_path, "w"))
+    print(f"[raw] per-prompt outcomes + {len(boot)} bootstrap replicates -> {raw_path}")
     print(f"\n=== {args.a} vs {args.b} (head-to-head, judge {H2H_JUDGE}, 2 games/prompt) ===")
     print(f"{args.a} win rate vs {args.b}: {out['win_rate']}%  (95% CI {out['ci_lo']}-{out['ci_hi']})")
     print(f"  games={n_games} (nulls {nulls}) | {args.a} wins {wins} · ties {ties} · losses {losses}")

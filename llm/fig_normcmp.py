@@ -87,13 +87,12 @@ for i, d in enumerate(DIVS):
 # judge provenance in each panel's empty top-right strip (text only, no frame)
 axT.text(0.99, 0.97, "Judge: gpt-4.1-mini-2025-04-14",
          transform=axT.transAxes, ha="right", va="top", fontsize=8.5, color="#666666")
-axB.text(0.99, 0.97, "Judge: gpt-4.1-mini-2025-04-14\nbox = IQR  ·  whiskers = 95% CI",
-         transform=axB.transAxes, ha="right", va="top", fontsize=8.5, color="#666666",
-         linespacing=1.5)
+axB.text(0.99, 0.97, "Judge: gpt-4.1-mini-2025-04-14",
+         transform=axB.transAxes, ha="right", va="top", fontsize=8.5, color="#666666")
 
 # integer ticks every 2 pts (7-15) with a little headroom so no CI cap is clipped
 axT.set_ylim(6.0, 16.4); axT.set_yticks([7, 9, 11, 13, 15])
-axB.set_ylim(50, 72);    axB.set_yticks([50, 55, 60, 65, 70])   # headroom for the box note
+axB.set_ylim(52, 70);    axB.set_yticks([55, 60, 65, 70])   # zoomed to the boxes (50% tie is off-scale)
 axT.set_xlim(-0.6, len(DIVS) - 0.4)
 axT.set_ylabel("Qwen 1.7B vs gpt-4\nWin Rate (%)", fontsize=11)
 axB.set_ylabel("Qwen 1.7B\nCanonical vs Amari\nWin Rate (%)", fontsize=11)
