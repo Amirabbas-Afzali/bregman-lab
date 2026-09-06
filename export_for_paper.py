@@ -47,6 +47,11 @@ FIGS = {
                                     "the 500 Arena-Hard prompts actually split once each is judged twice "
                                     "with the positions swapped (canonical both / no consistent winner / "
                                     "amari both), from h2h_normcmp/*_mini2_raw.json"),
+    "fL4_vs_base_normcmp":         ("llm/results/stageB_vs_base",
+                                    "fig_vs_base.py — each form against the model it started from "
+                                    "(Qwen3-1.7B-Base answers = Base_repo) over the canonical-vs-amari "
+                                    "boxes; llm/results/bench/arena_v01/h2h_vs_base/*.json + "
+                                    "h2h_normcmp/*_mini2_raw.json, judge gpt-4.1-mini-2025-04-14"),
 }
 
 
