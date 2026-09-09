@@ -193,13 +193,25 @@ def selftest():
 # ─────────────────────────────────────────────────────────────────────────────────────────
 # Models / data
 # ─────────────────────────────────────────────────────────────────────────────────────────
-def load_model(name, train):
+# device for tensors/models; overridden to the per-rank accelerator device when launched under
+# Accelerate+FSDP (multi-GPU full-FT for 4B/8B/14B). Default "cuda" keeps the single-GPU path identical.
+_DEVICE = "cuda"
+
+
+def load_model(name, train, place=True):
     from transformers import AutoModelForCausalLM
+    kw = {}
+    try:                                    # flash-attention-2 (wheelhouse) — big speedup on long seqs
+        import flash_attn  # noqa: F401
+        kw["attn_implementation"] = "flash_attention_2"
+    except Exception:
+        pass
     try:
-        m = AutoModelForCausalLM.from_pretrained(name, dtype=torch.bfloat16)
+        m = AutoModelForCausalLM.from_pretrained(name, dtype=torch.bfloat16, **kw)
     except TypeError:
-        m = AutoModelForCausalLM.from_pretrained(name, torch_dtype=torch.bfloat16)
-    m.to("cuda")
+        m = AutoModelForCausalLM.from_pretrained(name, torch_dtype=torch.bfloat16, **kw)
+    if place:                               # under FSDP the policy is placed/sharded by accelerator.prepare
+        m.to(_DEVICE)
     if train:
         m.train(); m.gradient_checkpointing_enable()
     else:
@@ -261,17 +273,17 @@ def encode_pair(tok, ex, max_len, kw, step_mode="token"):
 
 
 def _logits(model, ids):
-    return model(ids.unsqueeze(0).to("cuda")).logits[0].float()      # [T, V] fp32
+    return model(ids.unsqueeze(0).to(_DEVICE)).logits[0].float()      # [T, V] fp32
 
 
 def pair_scores(policy, ref, enc, key, beta, inner, adiv_a, clamp, norm="natural", step_size=1):
     (iw, cw, sw), (il, cl, sl) = enc
     with torch.no_grad():
         rw, rl = _logits(ref, iw), _logits(ref, il)
-    sw = sw.to("cuda") if sw is not None else None
-    sl = sl.to("cuda") if sl is not None else None
-    Sw = score_from_logits(_logits(policy, iw), rw, iw.to("cuda"), cw.to("cuda"), key, beta, inner, adiv_a, clamp, norm, step_size, sw)
-    Sl = score_from_logits(_logits(policy, il), rl, il.to("cuda"), cl.to("cuda"), key, beta, inner, adiv_a, clamp, norm, step_size, sl)
+    sw = sw.to(_DEVICE) if sw is not None else None
+    sl = sl.to(_DEVICE) if sl is not None else None
+    Sw = score_from_logits(_logits(policy, iw), rw, iw.to(_DEVICE), cw.to(_DEVICE), key, beta, inner, adiv_a, clamp, norm, step_size, sw)
+    Sl = score_from_logits(_logits(policy, il), rl, il.to(_DEVICE), cl.to(_DEVICE), key, beta, inner, adiv_a, clamp, norm, step_size, sl)
     return Sw, Sl
 
 
@@ -354,6 +366,20 @@ def main():
         raise SystemExit("step-level (--step-mode fixed/newline) needs --inner sample and not euc "
                          "(the exact inner term over the sentence action space is intractable)")
 
+    # ── optional multi-GPU full-FT via Accelerate + FSDP (4B/8B/14B). Activates only when launched
+    #    distributed (WORLD_SIZE>1, e.g. `accelerate launch --config_file fsdp.yaml`). The single-GPU
+    #    path (accel is None) is byte-identical to before. ─────────────────────────────────────────
+    global _DEVICE
+    accel = None
+    world, rank, is_main = 1, 0, True
+    if int(os.environ.get("WORLD_SIZE", "1")) > 1:
+        from accelerate import Accelerator
+        accel = Accelerator()                     # FSDP + bf16 come from the accelerate config at launch
+        _DEVICE = accel.device
+        world, rank, is_main = accel.num_processes, accel.process_index, accel.is_main_process
+        accel.print(f"[FSDP] world={world}  device={_DEVICE}  (grad_accum {args.grad_accum} -> "
+                    f"{max(1, args.grad_accum // world)}/rank)")
+
     from transformers import AutoTokenizer
     tok = AutoTokenizer.from_pretrained(args.policy or args.ref)
     kw = {}
@@ -363,16 +389,18 @@ def main():
     except TypeError:
         pass
 
-    ref = load_model(args.ref, train=False)
-    policy = load_model(args.policy or args.ref, train=True)
+    ref = load_model(args.ref, train=False)                       # frozen reference: replicated on each rank
+    policy = load_model(args.policy or args.ref, train=True, place=(accel is None))
     if args.init_noise > 0:                            # break the u=1 degeneracy of the standard-DPO init (π_θ=π_ref):
         torch.manual_seed(args.seed + 1)               # one-time ε weight perturbation so u_init≠1 (else non-admissible
         with torch.no_grad():                          # single-sample freezes, g'(1)=f'(1)=0). RKL is insensitive to it (control).
-            for p in policy.parameters():
+            for p in policy.parameters():              # (before FSDP shard: full model, identical on every rank)
                 if p.dim() >= 2:                       # perturb weight matrices only (not norms/biases)
                     p.add_(torch.randn_like(p) * (args.init_noise * p.float().std()))
     opt = torch.optim.AdamW(policy.parameters(), lr=args.lr, betas=(0.9, args.adam_beta2),
                             weight_decay=args.weight_decay)
+    if accel is not None:
+        policy, opt = accel.prepare(policy, opt)       # FSDP-shard the policy + its optimizer states
 
     ds = [json.loads(l) for l in open(args.data) if l.strip()]
     rng = np.random.default_rng(args.seed); rng.shuffle(ds)
@@ -394,17 +422,19 @@ def main():
 
     def train_iter():
         while True:
-            order = rng.permutation(len(ds_train))
-            for j in order:
+            order = rng.permutation(len(ds_train))     # same permutation on every rank (shared rng seed)
+            for j in order[rank::world]:               # each rank consumes a disjoint stride -> data-parallel
                 yield ds_train[j]
     it = train_iter()
+    accum_local = max(1, args.grad_accum // world)     # per-rank micro-steps; FSDP averages across ranks
+                                                       # so global effective batch stays ~grad_accum
 
     hist = []
     if torch.cuda.is_available():
         torch.cuda.reset_peak_memory_stats()          # measure the TRAINING peak (exclude load transients)
     t0 = time.time()
     seg = f"newline" if args.step_mode == "newline" else (f"fixed×{args.step_size}" if args.step_mode == "fixed" else "token")
-    print(f"=== Stage B: Ω={SHORT[args.div]} (key {args.div}) inner={args.inner} norm={norm} step={seg} "
+    is_main and print(f"=== Stage B: Ω={SHORT[args.div]} (key {args.div}) inner={args.inner} norm={norm} step={seg} "
           f"beta={args.beta} lr={args.lr}({args.lr_schedule},wu{args.warmup_ratio}) wd={args.weight_decay} "
           f"β2={args.adam_beta2} steps={args.steps}{f'(={args.epochs}ep)' if args.epochs else ''} accum={args.grad_accum} "
           f"clip={args.grad_clip} | train={len(ds_train)} eval={len(ds_eval)}"
@@ -422,7 +452,7 @@ def main():
         opt.zero_grad(set_to_none=True)
         losses, accs = [], []
         got = 0
-        while got < args.grad_accum:
+        while got < accum_local:
             enc = encode_pair(tok, next(it), args.max_len, kw, args.step_mode)
             if enc is None:
                 continue
@@ -430,14 +460,20 @@ def main():
             loss = -F.logsigmoid(Sw - Sl)
             if not torch.isfinite(loss):
                 print(f"[warn] non-finite loss at step {step} — skipping this pair"); continue
-            (loss / args.grad_accum).backward()
+            if accel is not None:                       # /accum_local per rank; FSDP mean-reduce over ranks
+                accel.backward(loss / accum_local)      #   -> global grad = mean over the ~grad_accum batch
+            else:
+                (loss / args.grad_accum).backward()
             losses.append(loss.item()); accs.append(int(Sw.item() > Sl.item())); got += 1
         if args.grad_noise > 0:                       # SGLD-style decaying gradient noise: kicks θ off the u=1 critical point
             sigma = args.grad_noise / (1.0 + step) ** 0.55
             for p in policy.parameters():
                 if p.grad is not None:
                     p.grad.add_(torch.randn_like(p.grad) * sigma)
-        gnorm = torch.nn.utils.clip_grad_norm_(policy.parameters(), args.grad_clip).item()
+        if accel is not None:
+            gnorm = accel.clip_grad_norm_(policy.parameters(), args.grad_clip).item()
+        else:
+            gnorm = torch.nn.utils.clip_grad_norm_(policy.parameters(), args.grad_clip).item()
         opt.step()
         if sched is not None:
             sched.step()
@@ -450,19 +486,30 @@ def main():
                 rec["gpu_reserved_gb"] = round(torch.cuda.max_memory_reserved() / 1e9, 2)
             eval_every = args.eval_every if args.eval_every > 0 else args.log_every
             if step % eval_every == 0 or step == 1 or step == args.steps:   # eval is the expensive part — decoupled from logging
-                rec.update(evaluate(policy, ref, tok, ds_eval, args.div, args.beta, args.inner,
+                rec.update(evaluate(policy, ref, tok, ds_eval, args.div, args.beta, args.inner,   # FSDP: ALL ranks (collective forward)
                                     args.adiv_a, clamp, args.max_len, kw, args.eval_n, norm, args.step_size, args.step_mode))
-            hist.append(rec)
-            ev = f"eval_acc {rec['eval_acc']:.3f} margin {rec['eval_margin']:+.3f}  " if "eval_acc" in rec else ""
-            print(f"  step {step:4d}  loss {rec['loss']:.4f}  train_acc {rec['train_acc']:.3f}  "
-                  f"{ev}|g| {gnorm:.2f}  {rec['sec']:.0f}s  mem {rec.get('gpu_reserved_gb', '?')}G")
-            with open(args.out + ".json", "w") as f:
-                json.dump({"args": vars(args), "history": hist}, f, indent=2)
+            if is_main:                                   # only main logs/saves; every rank still ran eval above
+                hist.append(rec)
+                ev = f"eval_acc {rec['eval_acc']:.3f} margin {rec['eval_margin']:+.3f}  " if "eval_acc" in rec else ""
+                print(f"  step {step:4d}  loss {rec['loss']:.4f}  train_acc {rec['train_acc']:.3f}  "
+                      f"{ev}|g| {gnorm:.2f}  {rec['sec']:.0f}s  mem {rec.get('gpu_reserved_gb', '?')}G")
+                with open(args.out + ".json", "w") as f:
+                    json.dump({"args": vars(args), "history": hist}, f, indent=2)
 
     if args.save_policy:
-        policy.save_pretrained(args.out + "_policy"); tok.save_pretrained(args.out + "_policy")
-        print("saved policy ->", args.out + "_policy")
-    print("done ->", args.out + ".json")
+        if accel is not None:                              # FSDP: gather the full (unsharded) state dict, save on main
+            accel.wait_for_everyone()
+            state = accel.get_state_dict(policy)
+            unwrapped = accel.unwrap_model(policy)
+            if is_main:
+                unwrapped.save_pretrained(args.out + "_policy", state_dict=state, safe_serialization=True)
+                tok.save_pretrained(args.out + "_policy")
+        else:
+            policy.save_pretrained(args.out + "_policy"); tok.save_pretrained(args.out + "_policy")
+        if is_main:
+            print("saved policy ->", args.out + "_policy")
+    if is_main:
+        print("done ->", args.out + ".json")
 
 
 if __name__ == "__main__":
