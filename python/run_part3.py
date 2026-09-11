@@ -299,6 +299,10 @@ def run_2x7(peak, rng, n_mdp):
         print(f"    2x7 MDP {mi + 1}/{n_mdp} done")
     gaps = {"std": {rk: mean_std(raw["std"][rk]) for rk in REGKEYS},
             "canon": {rk: mean_std(raw["canon"][rk]) for rk in fdivs}}
+    # `raw` is kept: std and canon are trained from the SAME seed and data per MDP, so the paired
+    # per-MDP differences are the right statistic — an across-MDP spread throws that pairing away.
+    gaps["_per_mdp"] = {arm: {rk: [float(v) for v in xs] for rk, xs in d.items()}
+                        for arm, d in raw.items()}
     return alphas0, rewards0, std_pol0, canon_pol0, gaps
 
 
