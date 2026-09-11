@@ -35,7 +35,8 @@ QUICK = bool(os.environ.get("QUICK"))
 CANONICAL = bool(os.environ.get("CANONICAL"))   # C3: also render the 2×7 standard-vs-canonical recovery
 GAMMA, EPS, DEPTH, BATCH = 0.9, 0.2, 4, 16
 PEAKS = [0.6, 0.7, 0.8]          # §4.3 sweep at three calibration anchors (on- and off-policy each)
-TWOX7_PEAKS = [0.9]              # C3/A10: the 2×7 recovery lives at a high-drift peak where RKL separates
+TWOX7_PEAKS = [float(x) for x in os.environ.get("TWOX7_PEAKS", "0.9").split(",")]
+                                 # C3/A10: the 2×7 recovery lives at a high-drift peak where RKL separates
                                  # (at low drift every canonical divergence ≈ KL — see fig_permissibility_bias)
 NMC_SWEEP = [1, 2] if QUICK else [1, 2, 4, 8, 16, 32, 64, 128, 256]   # §4.3 Monte-Carlo budget sweep
 SEEDS = 2 if QUICK else 3
@@ -276,7 +277,10 @@ def run_2x7(peak, rng, n_mdp):
         data_off = make_dataset(rewards, EPS, GAMMA, rng, NPAIRS)            # π_ref rollouts
         if mi == 0:
             alphas0, rewards0 = alphas, rewards
-        cfg = TrainConfig(gamma=GAMMA, steps=STEPS, batch=BATCH, n_mc=1)
+        # policy_mode="off" is REQUIRED: the 2x7 panel compares exact vs PURE off-policy (the single
+        # logged a'). TrainConfig defaults to "off_on" (Dyna: a' resampled from the current policy),
+        # which measures a different regime entirely and does not line up with fig_tabular's off bars.
+        cfg = TrainConfig(gamma=GAMMA, steps=STEPS, batch=BATCH, n_mc=1, policy_mode="off")
         for rk in REGKEYS:                                                   # paired std/canon per divergence
             seed_rk = int(rng.integers(0, 2 ** 31 - 1))                      # one seed → identical training noise
             std_reg = None if rk == "euc" else make_standard(rk)            # euc: natural (no f'(1)=0 form)
