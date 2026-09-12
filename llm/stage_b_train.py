@@ -382,11 +382,20 @@ def main():
 
     from transformers import AutoTokenizer
     tok = AutoTokenizer.from_pretrained(args.policy or args.ref)
+    if getattr(tok, "chat_template", None) is None:
+        # Qwen3-*-Base ships a chat template; Llama-3.2-* and gemma-*-pt do not, and encode_pair needs
+        # one to find the prompt/response boundary it masks on. Install the plainest possible wrapper
+        # rather than borrowing an instruct variant's: the format only has to be consistent WITHIN a
+        # model, since Amari and canonical are always compared inside one family and never across.
+        tok.chat_template = ("{% for m in messages %}{{ m['role'] }}: {{ m['content'] }}\n"
+                             "{% endfor %}{% if add_generation_prompt %}assistant: {% endif %}")
+        print(f"[tok] {args.policy or args.ref}: no chat_template -> installed the minimal fallback",
+              flush=True)
     kw = {}
     try:                                            # Qwen3: suppress the <think> block
         tok.apply_chat_template([{"role": "user", "content": "x"}], tokenize=False, enable_thinking=False)
         kw = {"enable_thinking": False}
-    except TypeError:
+    except (TypeError, ValueError):                 # kwarg unknown, or template does not accept it
         pass
 
     ref = load_model(args.ref, train=False)                       # frozen reference: replicated on each rank
