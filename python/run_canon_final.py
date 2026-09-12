@@ -20,18 +20,25 @@ def main():
     fbias.render()                                            # deterministic, no training
 
     rng = np.random.default_rng(20260826)
-    a0, r0, sp, cp, gp = rp.run_2x7(peak, rng, n)
+    a0, r0, pols, gp = rp.run_2x7(peak, rng, n)
     sfx = f"_p{int(round(peak * 10))}"
-    fpath = rp.fig_policy_2x7(r0, a0, sp, cp, gp, peak, sfx)
+    fpath = rp.fig_policy_3x7(r0, a0, pols, gp, peak, sfx)
 
     os.makedirs("data/tabular", exist_ok=True)
     # NOTE: mean_std returns (mean, STD) — not a CI. Store both the summary and the per-MDP arrays
     # so paired intervals can be computed without re-running.
     out = {"peak": peak, "n_mdp": n, "fig": fpath,
            "summary_is": "(mean, std) across MDPs — divide by sqrt(n) for a standard error",
-           "gap": {"std": {k: list(gp["std"][k]) for k in rp.REGKEYS},
+           "gap": {"exact": {k: list(gp["exact"][k]) for k in rp.REGKEYS},
+                   "std": {k: list(gp["std"][k]) for k in rp.REGKEYS},
                    "canon": {k: list(gp["canon"][k]) for k in gp["canon"]}},
-           "per_mdp": gp["_per_mdp"]}
+           "per_mdp": gp["_per_mdp"],
+           # MDP-0 policies + the reward draw, so fig_policy_3x7 can be re-rendered for a style
+           # change without re-training (the panel only ever plots MDP 0).
+           "panel_cache": {"alphas": {k: float(v) for k, v in a0.items()},
+                           "rewards": np.asarray(r0).tolist(),
+                           "pols": {arm: {k: np.asarray(v).tolist() for k, v in d.items()}
+                                    for arm, d in zip(("exact", "std", "canon"), pols)}}}
     json.dump(out, open(f"data/tabular/canon_2x7{sfx}.json", "w"), indent=1)
 
     print("\npaired std - canon (same seed & data per MDP), mean [95% CI]:")

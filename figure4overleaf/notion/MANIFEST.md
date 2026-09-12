@@ -17,7 +17,7 @@ Re-export upstream first, then refresh here and re-upload to Notion.
 | `apx_adiv_morph.png` | `f10_adiv_morph` | appendix |
 | `apx_adiv_invariant.png` | `f11_adiv_invariant` | appendix |
 | `apx_inner_term_bias.png` | `f12_permissibility_bias` | appendix — single-sample inner-term bias vs drift |
-| `apx_policy_recovery_2x7.png` | `f13_policy_2x7_canonical` | appendix — π* recovery, 2×7 panel |
+| `apx_policy_recovery_3x7.png` | `f13_policy_3x7_canonical` | appendix — π* recovery, 3×7 panel (exact / Amari / canonical) |
 | `apx_arena_winrate_all.png` | `fL1_arena_winrate` | appendix — all 7 divergences vs baseline |
 | `apx_arena_h2h_all.png` | `fL2_head_to_head` | appendix — RKL head-to-head vs each divergence |
 | `apx_arena_prompt_mix.png` | `fL3new_normcmp_wr_prompts` | appendix — prompt-outcome mix variant |

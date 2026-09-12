@@ -29,9 +29,13 @@ FIGS = {
     "f12_permissibility_bias":     ("python/figs/permissibility_bias",
                                     "fig_permissibility_bias.py — off-policy single-sample inner-term |bias| "
                                     "vs drift (canonical generators); RKL≡0 uniquely permissible, others fan out"),
-    "f13_policy_2x7_canonical":    ("python/figs/part3_policy_2x7_p9",
-                                    "run_part3.py run_2x7/fig_policy_2x7 (CANONICAL=1) — standard(Amari,f'=0) vs "
-                                    "canonical(f'=f'') off-policy π* recovery, peak 0.9 (high drift), 100 MDPs"),
+    "f13_policy_3x7_canonical":    ("python/figs/part3_policy_3x7_p9",
+                                    "run_canon_final.py run_2x7/fig_policy_3x7 — π* recovery under the exact "
+                                    "inner term | off-policy Amari f'(1)=0 | off-policy canonical f'(1)=f''(1), "
+                                    "peak 0.9 (high drift), 100 MDPs, pure off-policy (single logged a'). "
+                                    "RKL has no Amari cell (u·log u is already canonical) and euc no canonical "
+                                    "cell (not an f-divergence). RKL's canonical arm equals its exact arm to "
+                                    "machine precision — the sample-free property."),
     "fL1_arena_winrate":           ("llm/results/stageB_divergence_wr",
                                     "fig_permissibility_wr.py · llm/results/bench/arena_v01/divergence_wr.json"),
     "fL2_head_to_head":            ("llm/results/stageB_divergence_h2h",
