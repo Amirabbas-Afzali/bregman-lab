@@ -117,7 +117,12 @@ def fig_headline(man, agg_p, peak, nmc):
     line_regimes = [r for r in ("on", "off_on") if r in agg_p]      # on-policy, then resampled
     have_grouped = "exact" in agg_p and "off" in agg_p
     npanel = len(line_regimes) + (1 if have_grouped else 0)
-    fig, axes = plt.subplots(1, npanel, figsize=(5.2 * npanel, 4.4))
+    # The bar panel carries 7 groups x 3 bars and needs the room; the two line panels are readable
+    # at half the width. Give the line panels a quarter of the figure each and the bars the other
+    # half, so the divergence groups separate instead of touching.
+    ratios = [1] * len(line_regimes) + ([len(line_regimes)] if have_grouped else [])
+    fig, axes = plt.subplots(1, npanel, figsize=(5.2 * npanel, 4.4),
+                             gridspec_kw={"width_ratios": ratios})
     axes = np.atleast_1d(axes)
     ymax = 0
     ai = 0
@@ -147,7 +152,7 @@ def fig_headline(man, agg_p, peak, nmc):
         # gap: it is not an f-divergence, so it has no canonical representative and slot 2 stays empty.
         ax = axes[ai]
         arms = load_canon(peak)
-        w = 0.92 / 3
+        w = 0.78 / 3                                  # <0.92: leaves a visible gap between groups
         slot = (-w, 0.0, w)
         for i, rk in enumerate(REGKEYS):
             kl = rk == "kl"
