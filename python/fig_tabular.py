@@ -81,18 +81,29 @@ def _design_str(man):
 
 
 def load_canon(peak):
-    """Off-policy canonical Δπ per divergence at this peak, if run_part3.py (CANONICAL=1) produced it.
+    """All three arms of the paired 2x7 run at this peak, or None if it has not been run.
 
-    run_canon_final.py writes data/tabular/canon_2x7_p{peak*10}.json (gap.std = Amari, gap.canon).
-    Returns {rk: mean} for the canonical arm, or None when that peak has not been run. `euc` is absent
-    by construction — it is not an f-divergence, so it has no canonical representative."""
-    import glob
+    run_canon_final.py writes data/tabular/canon_2x7_p{peak*10}.json with gap.exact / gap.std (Amari)
+    / gap.canon, every arm trained from the SAME seed and the SAME off-policy dataset on each MDP.
+    The bar panel takes all three from here rather than mixing in fig_tabular's own "off" series:
+    one paired source keeps the three bars comparable within a divergence. Stored values are
+    (mean, std) across MDPs, so the interval is 1.96*std/sqrt(n_mdp).
+
+    `canon` has no euc (not an f-divergence). `std` has every key, including kl -- that entry is the
+    Amari-normalized RKL, which is the only place it exists: fig_tabular's own "off" bars use the
+    natural generator, and for RKL the natural generator IS the canonical one.
+    """
     hit = glob.glob(f"data/tabular/canon_2x7_p{int(round(peak * 10))}.json")
     if not hit:
         return None
-    g = json.load(open(hit[0]))["gap"]
-    canon = g["canon"]
-    return {rk: (tuple(v) if isinstance(v, (list, tuple)) else (v, 0.0)) for rk, v in canon.items()}
+    d = json.load(open(hit[0]))
+    n = max(1, int(d.get("n_mdp", 1)))
+    def ci(v):
+        m, sd = (list(v) + [0.0])[:2]
+        return float(m), 1.96 * float(sd) / np.sqrt(n)
+    g = d["gap"]
+    return {arm: {rk: ci(v) for rk, v in g.get(arm, {}).items()}
+            for arm in ("exact", "std", "canon")}
 
 
 def fig_headline(man, agg_p, peak, nmc):
@@ -128,51 +139,49 @@ def fig_headline(man, agg_p, peak, nmc):
             ax.legend(fontsize=LEG_FS, ncol=2, loc="upper right")
         ai += 1
     if have_grouped:                                     # exact | off Amari | off canonical, RIGHT
-        # Three slots per divergence, always in the same x positions so the columns read across:
-        #   slot 0  exact      closed-form inner term (all a'), hatched ///
-        #   slot 1  off Amari  single logged a', f'(1)=0     — EMPTY for RKL, whose conventional
-        #                      generator u*log(u) is already the canonical one (= standard DPO)
-        #   slot 2  off canon  single logged a', f'(1)=f''(1), hatched \\  — EMPTY for euc, which is
-        #                      not an f-divergence and so has no canonical representative
-        # fig_tabular's "off" series carries the NATURAL generator, which equals Amari for
-        # adiv/js/hel/chi2 and equals canonical for kl(RKL) — hence the slot it lands in differs.
+        # Three bars per divergence, always in this order so the columns read across:
+        #   slot 0  exact      closed-form inner term over all a'          hatched ///, faint
+        #   slot 1  Amari      single logged a', f'(1)=0                   solid, translucent
+        #   slot 2  canonical  single logged a', f'(1)=f''(1)              hatched \\, opaque
+        # All three come from the paired 2x7 run (same seed and data per MDP per arm). euc is the one
+        # gap: it is not an f-divergence, so it has no canonical representative and slot 2 stays empty.
         ax = axes[ai]
-        canon = load_canon(peak)                         # None when this peak has no canonical run
+        arms = load_canon(peak)
         w = 0.92 / 3
         slot = (-w, 0.0, w)
         for i, rk in enumerate(REGKEYS):
-            ce, cie, _ = agg_p["exact"][rk][1]
-            co, cio, _ = agg_p["off"][rk][1]
             kl = rk == "kl"
             ec = "#111" if kl else COLORS[rk]
             lw = 1.3 if kl else 0.8
-            ax.bar(x[i] + slot[0], ce, w, yerr=cie, capsize=2, facecolor=to_rgba(COLORS[rk], 0.28),
-                   hatch="///", edgecolor=ec, linewidth=lw, zorder=3)
-            ymax = max(ymax, ce + cie)
-            if kl:                                       # RKL: natural == canonical -> slot 2, no Amari bar
-                ax.bar(x[i] + slot[2], co, w, yerr=cio, capsize=2,
-                       facecolor=to_rgba(COLORS[rk], 0.62), hatch="\\\\",
+            if arms is None:                             # fall back to the old two-bar panel
+                ce, cie, _ = agg_p["exact"][rk][1]
+                co, cio, _ = agg_p["off"][rk][1]
+                ax.bar(x[i] - w / 2, ce, w, yerr=cie, capsize=2, facecolor=to_rgba(COLORS[rk], 0.28),
+                       hatch="///", edgecolor=ec, linewidth=lw, zorder=3)
+                ax.bar(x[i] + w / 2, co, w, yerr=cio, capsize=2, color=COLORS[rk], zorder=3)
+                ymax = max(ymax, ce + cie, co + cio)
+                continue
+            for j, (arm, face, hatch) in enumerate((("exact", 0.28, "///"),
+                                                    ("std",   0.45, None),
+                                                    ("canon", 0.85, "\\\\"))):
+                v = arms[arm].get(rk)
+                if v is None:                            # euc has no canonical representative
+                    continue
+                m, c = v
+                ax.bar(x[i] + slot[j], m, w, yerr=c, capsize=2,
+                       facecolor=to_rgba(COLORS[rk], face), hatch=hatch,
                        edgecolor=ec, linewidth=lw, zorder=3)
-                ymax = max(ymax, co + cio)
-            else:                                        # everyone else: natural == Amari -> slot 1
-                ax.bar(x[i] + slot[1], co, w, yerr=cio, capsize=2, color=COLORS[rk], alpha=1.0,
-                       edgecolor="none", zorder=3)
-                ymax = max(ymax, co + cio)
-                cc = canon.get(rk) if canon else None     # measured canonical arm -> slot 2
-                if cc is not None:
-                    cv, cvi = (cc if isinstance(cc, (list, tuple)) else (cc, 0.0))[:2]
-                    ax.bar(x[i] + slot[2], cv, w, yerr=cvi or None, capsize=2,
-                           facecolor=to_rgba(COLORS[rk], 0.62), hatch="\\\\",
-                           edgecolor=ec, linewidth=lw, zorder=3)
-                    ymax = max(ymax, cv + (cvi or 0.0))
+                ymax = max(ymax, m + c)
         ax.set_xticks(x); ax.set_xticklabels([SHORT[rk] for rk in REGKEYS], fontsize=8)
         ax.set_title("exact vs off-policy", fontsize=10); ax.grid(alpha=0.2, axis="y")
-        handles = [Patch(facecolor=to_rgba("#888", 0.28), hatch="///", edgecolor="#555",
-                         label=r"exact (closed form, all $a'$)"),
-                   Patch(facecolor="#888", label=r"off-policy, Amari $f'(1)=0$"),
-                   Patch(facecolor=to_rgba("#888", 0.62), hatch="\\\\", edgecolor="#555",
-                         label=r"off-policy, canonical $f'(1)=f''(1)$")]
-        ax.legend(handles=handles, fontsize=LEG_FS, loc="upper left")
+        ax.legend(handles=[
+            Patch(facecolor=to_rgba("#888", 0.28), hatch="///", edgecolor="#555",
+                  label=r"exact (closed form, all $a'$)"),
+            Patch(facecolor=to_rgba("#888", 0.45), edgecolor="#555",
+                  label=r"off-policy, Amari $f'(1)=0$"),
+            Patch(facecolor=to_rgba("#888", 0.85), hatch="\\\\", edgecolor="#555",
+                  label=r"off-policy, canonical $f'(1)=f''(1)$")],
+            fontsize=LEG_FS, loc="upper left")
     for ax in axes:
         ax.set_ylim(0, ymax * 1.28)                      # extra headroom so legends clear the bars/lines
     fig.tight_layout()
