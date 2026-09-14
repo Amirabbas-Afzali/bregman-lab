@@ -355,6 +355,11 @@ def main():
     # et al. 2023). With an adapter the reference model is not loaded at all: disabling the adapter
     # restores the base model, which is what TRL does ("the reference model is not needed since the
     # adapter can be disabled to revert to the initial model").
+    ap.add_argument("--save-adapter-every", type=int, default=0,
+                    help="LoRA only: every N steps, write the ADAPTER (~0.7G, not the 16G merged model) to "
+                         "{out}_adapter. Insurance for multi-day runs: the merged policy is written only "
+                         "after the final step, so without this a walltime overrun or node failure loses "
+                         "everything. Merge a rescued adapter with merge_adapter.py.")
     ap.add_argument("--no-grad-checkpoint", action="store_true",
                     help="disable gradient checkpointing (recompute). Numerically identical, ~25-30%% faster, "
                          "much more activation memory — worth it under LoRA on one 80G H100, where the frozen "
@@ -567,6 +572,15 @@ def main():
                       f"{ev}|g| {gnorm:.2f}  {rec['sec']:.0f}s  mem {rec.get('gpu_reserved_gb', '?')}G")
                 with open(args.out + ".json", "w") as f:
                     json.dump({"args": vars(args), "history": hist}, f, indent=2)
+
+        if args.lora_r > 0 and args.save_adapter_every > 0 and step % args.save_adapter_every == 0 and is_main:
+            # Adapter only: ~0.7G and, unlike merge_and_unload(), it does NOT consume the PeftModel,
+            # so training continues untouched. Overwrites in place -> one directory, not one per step.
+            policy.save_pretrained(args.out + "_adapter")
+            tok.save_pretrained(args.out + "_adapter")   # carry the RUNTIME chat_template with it: a base
+            # model may have none and we install a fallback, so merging against a fresh base tokenizer
+            # would silently lose the template the policy was trained against.
+            print(f"  [ckpt] adapter -> {args.out}_adapter (step {step})")
 
     if args.save_policy:
         if accel is not None:                              # FSDP: gather the full (unsharded) state dict, save on main
