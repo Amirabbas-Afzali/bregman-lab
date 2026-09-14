@@ -198,7 +198,7 @@ def selftest():
 _DEVICE = "cuda"
 
 
-def load_model(name, train, place=True):
+def load_model(name, train, place=True, ckpt=True):
     from transformers import AutoModelForCausalLM
     kw = {}
     try:                                    # flash-attention-2 (wheelhouse) — big speedup on long seqs
@@ -213,7 +213,9 @@ def load_model(name, train, place=True):
     if place:                               # under FSDP the policy is placed/sharded by accelerator.prepare
         m.to(_DEVICE)
     if train:
-        m.train(); m.gradient_checkpointing_enable()
+        m.train()
+        if ckpt:                            # off trades memory for ~25-30% speed; the math is unchanged
+            m.gradient_checkpointing_enable()
     else:
         m.eval()
         for p in m.parameters():
@@ -353,6 +355,10 @@ def main():
     # et al. 2023). With an adapter the reference model is not loaded at all: disabling the adapter
     # restores the base model, which is what TRL does ("the reference model is not needed since the
     # adapter can be disabled to revert to the initial model").
+    ap.add_argument("--no-grad-checkpoint", action="store_true",
+                    help="disable gradient checkpointing (recompute). Numerically identical, ~25-30%% faster, "
+                         "much more activation memory — worth it under LoRA on one 80G H100, where the frozen "
+                         "base leaves most of the card unused.")
     ap.add_argument("--lora-r", type=int, default=0, help="LoRA rank, 0 disables LoRA (full fine-tuning)")
     ap.add_argument("--lora-alpha", type=int, default=0, help="LoRA alpha, defaults to --lora-r")
     ap.add_argument("--lora-dropout", type=float, default=0.05)
@@ -434,10 +440,12 @@ def main():
     except (TypeError, ValueError):                 # kwarg unknown, or template does not accept it
         pass
 
-    policy = load_model(args.policy or args.ref, train=True, place=(accel is None))
+    ckpt = not args.no_grad_checkpoint
+    policy = load_model(args.policy or args.ref, train=True, place=(accel is None), ckpt=ckpt)
     if args.lora_r > 0:
         from peft import LoraConfig, get_peft_model
-        policy.enable_input_require_grads()             # gradient checkpointing + frozen base: without this no
+        if ckpt:
+            policy.enable_input_require_grads()             # gradient checkpointing + frozen base: without this no
                                                         # checkpointed block input requires grad and backward fails
         policy = get_peft_model(policy, LoraConfig(
             r=args.lora_r, lora_alpha=args.lora_alpha or args.lora_r, lora_dropout=args.lora_dropout,
