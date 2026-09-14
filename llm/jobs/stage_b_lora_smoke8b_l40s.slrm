@@ -1,5 +1,5 @@
 #!/bin/bash
-# LoRA SMOKE — Qwen3-8B-Base on a SINGLE H100, 20 steps. Measures the two numbers that decide the real
+# LoRA SMOKE — Qwen3-8B-Base on a SINGLE L40S (48G), 20 steps. Measures the two numbers that decide the real
 # run: peak memory (does one GPU hold base + adapter + the fp32 [T,V] logits?) and s/step (does one
 # epoch fit the 11:30 walltime tier?). Also validates the two new code paths at once:
 #   - AdapterRef: pi_ref = the base weights reached by disable_adapter(), so NO second model is loaded.
@@ -9,8 +9,8 @@
 # Submit FROM llm/:  sbatch jobs/stage_b_lora_smoke8b.slrm
 #
 #SBATCH --account=aip-rudner
-#SBATCH --job-name=lorasm8b
-#SBATCH --gres=gpu:h100:1
+#SBATCH --job-name=lorasm8bL
+#SBATCH --gres=gpu:l40s:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=96G
 #SBATCH --time=1:30:00
@@ -38,8 +38,8 @@ python stage_b_train.py \
   --div kl --norm canon --inner sample --step-mode token \
   --beta 0.1 --lr 5e-6 --lr-schedule linear --warmup-ratio 0.05 --weight-decay 0.01 --adam-beta2 0.999 \
   --steps 20 --grad-accum 64 --grad-clip 1.0 --max-len 1024 --clamp 15 \
-  --eval-n 64 --log-every 5 --eval-every 10 --seed 0 --save-policy \
-  --out "$OUT_DIR/smoke_lora8b_rkl_canon"
+  --eval-n 64 --log-every 5 --eval-every 10 --seed 0 \
+  --out "$OUT_DIR/smoke_lora8b_l40s_rkl_canon"
 echo "=== lora smoke done | $(date) ==="
-ls -la "$OUT_DIR/smoke_lora8b_rkl_canon_policy/" 2>/dev/null | head
-echo "reminder: rm -rf $OUT_DIR/smoke_lora8b_rkl_canon_policy  (16 GB, smoke only)"
+ls -la "$OUT_DIR/smoke_lora8b_l40s_rkl_canon_policy/" 2>/dev/null | head
+echo "reminder: rm -rf $OUT_DIR/smoke_lora8b_l40s_rkl_canon_policy  (16 GB, smoke only)"
