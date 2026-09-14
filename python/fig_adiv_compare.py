@@ -82,7 +82,7 @@ def render(kln_p, std_p, paper=False):
     # B1: no in-figure title. Caption items → α-div generator-normalization fix; off-policy; temperature
     # β = RKL@peak{peak}; {man['n_mdp']} MDPs; ±95% CI; same Ω/π*, only the inner-term estimator differs;
     # the standard curve's α→1 jump (Ψ→1−1/u) is the artifact, the canonical well is the fix.
-    ax.legend(fontsize=8, loc="lower left")
+    ax.legend(fontsize=8, loc="upper left")
     fig.tight_layout()
     stem = f"figs/adiv_compare_p{int(round(peak*100))}{'_paper' if paper else ''}"
     for ext in ("png", "pdf"):
