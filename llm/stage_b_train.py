@@ -384,13 +384,24 @@ def main():
     tok = AutoTokenizer.from_pretrained(args.policy or args.ref)
     if getattr(tok, "chat_template", None) is None:
         # Qwen3-*-Base ships a chat template; Llama-3.2-* and gemma-*-pt do not, and encode_pair needs
-        # one to find the prompt/response boundary it masks on. Install the plainest possible wrapper
-        # rather than borrowing an instruct variant's: the format only has to be consistent WITHIN a
-        # model, since Amari and canonical are always compared inside one family and never across.
-        tok.chat_template = ("{% for m in messages %}{{ m['role'] }}: {{ m['content'] }}\n"
-                             "{% endfor %}{% if add_generation_prompt %}assistant: {% endif %}")
-        print(f"[tok] {args.policy or args.ref}: no chat_template -> installed the minimal fallback",
-              flush=True)
+        # one to find the prompt/response boundary it masks on. Follow the convention the DPO codebase
+        # uses for base checkpoints (Rafailov et al. 2023, and the f-DPO fork of it): the prompt is
+        # "\n\nHuman: ... \n\nAssistant:" and the response is terminated with the EOS token, which that
+        # code appends explicitly (chosen_tokens['input_ids'].append(tokenizer.eos_token_id)).
+        #
+        # The EOS is the part that matters. An earlier version of this fallback emitted "role: content"
+        # with no terminator, so nothing in training ever taught the policy to stop. gen_bench.py halts
+        # on eos_token_id, the policy never produced one, and 41% of Llama answers ran to the 1024-token
+        # cap while re-emitting the turn markers. That is an artificial failure to terminate, injected
+        # into the exact axis this paper measures, so it invalidated those runs.
+        tok.chat_template = (
+            "{% for m in messages %}"
+            "{% if m['role'] == 'user' %}{{ '\n\nHuman: ' + m['content'] }}"
+            "{% elif m['role'] == 'assistant' %}{{ '\n\nAssistant: ' + m['content'] + eos_token }}"
+            "{% endif %}{% endfor %}"
+            "{% if add_generation_prompt %}{{ '\n\nAssistant:' }}{% endif %}")
+        print(f"[tok] {args.policy or args.ref}: no chat_template -> installed the DPO-style fallback "
+              f"(Human/Assistant turns, response terminated with {tok.eos_token!r})", flush=True)
     kw = {}
     try:                                            # Qwen3: suppress the <think> block
         tok.apply_chat_template([{"role": "user", "content": "x"}], tokenize=False, enable_thinking=False)
