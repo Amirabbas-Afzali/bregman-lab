@@ -133,11 +133,11 @@ Per arm, the two things that matter:
 The `_policy` directory is an ordinary HuggingFace causal-LM directory (the adapter is merged in at
 save time), so it loads with plain `AutoModelForCausalLM.from_pretrained`. Generation + GPT-4.1 judging
 happen on our side — you do **not** need an OpenAI key. If moving 16 GB is awkward, send the
-`_adapter/` directory instead (**0.7 GB**) and we will merge it with `merge_adapter.py`.
+`_adapter/` directory instead (**1.4 GB**) and we will merge it with `merge_adapter.py`.
 
 ## 8. If a job dies
 
-`--save-adapter-every 100` writes `..._adapter/` every ~2.3 h, so a crash costs one interval, not the
+`--save-adapter-every 100` writes `..._adapter/` (1.4 GB) every ~2.4 h, so a crash costs one interval, not the
 run. Recover with:
 
 ```bash

@@ -356,7 +356,7 @@ def main():
     # restores the base model, which is what TRL does ("the reference model is not needed since the
     # adapter can be disabled to revert to the initial model").
     ap.add_argument("--save-adapter-every", type=int, default=0,
-                    help="LoRA only: every N steps, write the ADAPTER (~0.7G, not the 16G merged model) to "
+                    help="LoRA only: every N steps, write the ADAPTER (~1.4G fp32, not the 16G merged model) to "
                          "{out}_adapter. Insurance for multi-day runs: the merged policy is written only "
                          "after the final step, so without this a walltime overrun or node failure loses "
                          "everything. Merge a rescued adapter with merge_adapter.py.")

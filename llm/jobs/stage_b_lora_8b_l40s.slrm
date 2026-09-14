@@ -5,7 +5,8 @@
 # WHY THIS EXISTS. 8B full-FT DPO needs 4x H100, and not because of the policy: under FSDP each rank
 # holds 16G params + 16G optimiser + a REPLICATED 16G frozen reference, and only the first two shard.
 # Under LoRA the reference disappears — disabling the adapter restores the base weights, which ARE
-# pi_ref (the trick TRL uses in DPOTrainer). Measured on this exact config: 24.94G peak. One L40S.
+# pi_ref (the trick TRL uses in DPOTrainer). Measured on this exact config: 28.1G peak. One L40S.
+# Budget: 17.1G base (bf16) + 5.6G adapter/grads/optimiser (peft builds LoRA weights in fp32) + logits.
 #
 # WHY L40S RATHER THAN H100. Measured 90 s/step on L40S vs 50 s/step on H100 — only 1.8x slower,
 # far better than the ~4x the memory-bandwidth ratio suggests (this workload runs under 10% MFU).
@@ -19,7 +20,7 @@
 # BUDGET. 61,135 pairs / grad-accum 64 = 955 steps per epoch, so 2 epochs = 1,910 steps.
 # 1,910 x 90s = 47.8h; with eval/load/merge ~49h. --time is 68h: that covers up to ~128 s/step and
 # still sits in the 3-day tier.
-# --save-adapter-every 100 writes a 0.7G adapter every ~2.3h, so a node failure costs one interval
+# --save-adapter-every 100 writes a 1.4G adapter every ~2.4h, so a node failure costs one interval
 # instead of the whole run; rescue it with  python merge_adapter.py --adapter ..._adapter --out ..._policy
 #
 # HYPERPARAMETERS follow the alignment-handbook Zephyr-7b-beta DPO QLoRA recipe
