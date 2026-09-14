@@ -276,6 +276,20 @@ def _logits(model, ids):
     return model(ids.unsqueeze(0).to(_DEVICE)).logits[0].float()      # [T, V] fp32
 
 
+class AdapterRef:
+    """The reference model under LoRA. Calling it runs the policy with the adapter switched off, so
+    the base weights serve as pi_ref and no second copy of the model is held. This is the whole
+    memory argument for LoRA here: the replicated frozen reference is what forced 8B full
+    fine-tuning onto four GPUs."""
+
+    def __init__(self, policy):
+        self.policy = policy
+
+    def __call__(self, ids):
+        with self.policy.disable_adapter():
+            return self.policy(ids)
+
+
 def pair_scores(policy, ref, enc, key, beta, inner, adiv_a, clamp, norm="natural", step_size=1):
     (iw, cw, sw), (il, cl, sl) = enc
     with torch.no_grad():
@@ -332,6 +346,17 @@ def main():
     ap.add_argument("--step-mode", default="token", choices=["token", "fixed", "newline"],
                     help="token=token-level; fixed=--step-size tokens/step (ablation); newline=Step-DPO-style sentence steps")
     ap.add_argument("--step-size", type=int, default=1, help="tokens per step for --step-mode fixed (>1)")
+    # ---- LoRA. Settings follow the alignment-handbook Zephyr DPO QLoRA recipe (r=alpha=128,
+    # dropout 0.05, adapters on all seven linear projections, lr 5e-6, max_length 1024), which is the
+    # closest published DPO configuration to ours since it also trains on UltraFeedback in bf16 with
+    # flash-attention-2. Targeting every linear layer rather than q/v only follows QLoRA (Dettmers
+    # et al. 2023). With an adapter the reference model is not loaded at all: disabling the adapter
+    # restores the base model, which is what TRL does ("the reference model is not needed since the
+    # adapter can be disabled to revert to the initial model").
+    ap.add_argument("--lora-r", type=int, default=0, help="LoRA rank, 0 disables LoRA (full fine-tuning)")
+    ap.add_argument("--lora-alpha", type=int, default=0, help="LoRA alpha, defaults to --lora-r")
+    ap.add_argument("--lora-dropout", type=float, default=0.05)
+    ap.add_argument("--lora-target", default="q_proj,k_proj,v_proj,o_proj,gate_proj,up_proj,down_proj")
     ap.add_argument("--clamp", type=float, default=15.0, help="clamp |log u| (heavy-tail guard, §4); 0 disables")
     ap.add_argument("--grad-clip", type=float, default=1.0, help="max grad norm (raise to relax the aggressive default)")
     ap.add_argument("--init-noise", type=float, default=0.0,
@@ -409,16 +434,35 @@ def main():
     except (TypeError, ValueError):                 # kwarg unknown, or template does not accept it
         pass
 
-    ref = load_model(args.ref, train=False)                       # frozen reference: replicated on each rank
     policy = load_model(args.policy or args.ref, train=True, place=(accel is None))
+    if args.lora_r > 0:
+        from peft import LoraConfig, get_peft_model
+        policy.enable_input_require_grads()             # gradient checkpointing + frozen base: without this no
+                                                        # checkpointed block input requires grad and backward fails
+        policy = get_peft_model(policy, LoraConfig(
+            r=args.lora_r, lora_alpha=args.lora_alpha or args.lora_r, lora_dropout=args.lora_dropout,
+            target_modules=[m for m in args.lora_target.split(",") if m], bias="none", task_type="CAUSAL_LM"))
+        ref = AdapterRef(policy)                        # π_ref = the base weights, reached by disabling the adapter
+        if is_main:
+            policy.print_trainable_parameters()
+    else:
+        ref = load_model(args.ref, train=False)                   # frozen reference: replicated on each rank
+
     if args.init_noise > 0:                            # break the u=1 degeneracy of the standard-DPO init (π_θ=π_ref):
         torch.manual_seed(args.seed + 1)               # one-time ε weight perturbation so u_init≠1 (else non-admissible
         with torch.no_grad():                          # single-sample freezes, g'(1)=f'(1)=0). RKL is insensitive to it (control).
-            for p in policy.parameters():              # (before FSDP shard: full model, identical on every rank)
+            # Under LoRA the perturbation MUST land on lora_B (zero-initialised, hence u_init=1 exactly) and not on
+            # the base weights, which are π_ref itself here — perturbing them would move the reference too.
+            tgt = [(n, p) for n, p in policy.named_parameters() if "lora_B" in n] if args.lora_r > 0 \
+                else [(n, p) for n, p in policy.named_parameters()]
+            for n, p in tgt:                           # (before FSDP shard: full model, identical on every rank)
                 if p.dim() >= 2:                       # perturb weight matrices only (not norms/biases)
-                    p.add_(torch.randn_like(p) * (args.init_noise * p.float().std()))
-    opt = torch.optim.AdamW(policy.parameters(), lr=args.lr, betas=(0.9, args.adam_beta2),
-                            weight_decay=args.weight_decay)
+                    sd = p.float().std()
+                    if not torch.isfinite(sd) or sd == 0:   # lora_B starts at exactly 0 -> std 0; seed off lora_A's scale
+                        sd = torch.tensor(1.0 / max(args.lora_r, 1))
+                    p.add_(torch.randn_like(p) * (args.init_noise * sd))
+    opt = torch.optim.AdamW([p for p in policy.parameters() if p.requires_grad],
+                            lr=args.lr, betas=(0.9, args.adam_beta2), weight_decay=args.weight_decay)
     if accel is not None:
         policy, opt = accel.prepare(policy, opt)       # FSDP-shard the policy + its optimizer states
 
@@ -525,7 +569,9 @@ def main():
                 unwrapped.save_pretrained(args.out + "_policy", state_dict=state, safe_serialization=True)
                 tok.save_pretrained(args.out + "_policy")
         else:
-            policy.save_pretrained(args.out + "_policy"); tok.save_pretrained(args.out + "_policy")
+            to_save = policy.merge_and_unload() if args.lora_r > 0 else policy   # LoRA: fold BA into the base so
+            to_save.save_pretrained(args.out + "_policy")                         # gen_*.slrm needs no change
+            tok.save_pretrained(args.out + "_policy")
         if is_main:
             print("saved policy ->", args.out + "_policy")
     if is_main:
