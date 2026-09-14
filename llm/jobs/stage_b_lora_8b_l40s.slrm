@@ -7,7 +7,7 @@
 # Under LoRA the reference disappears — disabling the adapter restores the base weights, which ARE
 # pi_ref (the trick TRL uses in DPOTrainer). Measured on this exact config: 24.94G peak. One L40S.
 #
-# WHY L40S RATHER THAN H100. Measured 84 s/step on L40S vs 50 s/step on H100 — only 1.68x slower,
+# WHY L40S RATHER THAN H100. Measured 90 s/step on L40S vs 50 s/step on H100 — only 1.8x slower,
 # far better than the ~4x the memory-bandwidth ratio suggests (this workload runs under 10% MFU).
 # And Killarney's walltime tiers are far kinder to L40S:
 #       <=24h : h100 6 nodes (48 GPU)  |  l40s 84 nodes (336 GPU)
@@ -17,7 +17,8 @@
 # so absolute win rates stay comparable to the full-FT 8B table. On H100 we could only afford 1 epoch.
 #
 # BUDGET. 61,135 pairs / grad-accum 64 = 955 steps per epoch, so 2 epochs = 1,910 steps.
-# 1,910 x 84s = 44.6h. --time is 68h: that covers up to ~125 s/step and still sits in the 3-day tier.
+# 1,910 x 90s = 47.8h; with eval/load/merge ~49h. --time is 68h: that covers up to ~128 s/step and
+# still sits in the 3-day tier.
 # --save-adapter-every 100 writes a 0.7G adapter every ~2.3h, so a node failure costs one interval
 # instead of the whole run; rescue it with  python merge_adapter.py --adapter ..._adapter --out ..._policy
 #

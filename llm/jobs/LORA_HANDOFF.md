@@ -7,10 +7,10 @@ the Amari form at 8B scale. You need **one 48 GB GPU**, not four.
 **Why it fits on one GPU.** Standard DPO holds a second frozen copy of the model as the reference,
 and under FSDP that copy is replicated on every rank rather than sharded — that is what forces 8B
 full fine-tuning onto 4× H100. With LoRA the base weights are never written, so *disabling the
-adapter is the reference*, and the second copy disappears. Measured peak: **24.94 GB**.
+adapter is the reference*, and the second copy disappears. Measured peak: **27.8 GB**.
 
-**Time.** ~84 s/step on L40S, 1,910 steps (2 epochs) ≈ **45 hours** per arm. The two arms are an
-array job and run independently, so wall-clock is ~45 h if both get scheduled together.
+**Time.** ~90 s/step on L40S, 1,910 steps (2 epochs) ≈ **48 hours** per arm. The two arms are an
+array job and run independently, so wall-clock is ~48 h if both get scheduled together.
 
 ---
 
@@ -107,17 +107,17 @@ tail -f logs/lora8bL-<jobid>_<0|1>.out
 A healthy log line looks like:
 
 ```
-  step  100  loss 0.6612  train_acc 0.578  eval_acc 0.601 margin +0.043  |g| 2.11  8400s  mem 24.9G
+  step  100  loss 0.6612  train_acc 0.578  eval_acc 0.601 margin +0.043  |g| 2.11  9000s  mem 27.8G
 ```
 
 What to watch:
 
 | Signal | Healthy | Trouble |
 |---|---|---|
-| `mem` | ~25 G, flat | climbing → OOM coming |
+| `mem` | ~28 G, flat | climbing → OOM coming |
 | `loss` | drifting down from ~0.69 | **rising** — see below |
 | `|g|` | order 1–10 | order 100+ → the run is collapsing |
-| `sec` | ~84 × step | much higher → will not finish in 68 h |
+| `sec` | ~90 × step | much higher → will not finish in 68 h |
 
 A **rising loss on the `amari` arm is a real result, not a bug.** At 8B the Amari arm degraded while
 canonical did not, and that instability is precisely what these runs are measuring. Do not "fix" it.
@@ -157,12 +157,12 @@ Every one of these cost us real time.
 
 **Storage.** A saved 8B policy is 16 GB and there are two of them, plus adapters. Write to scratch,
 never to a quota-limited project filesystem. Ours sits at 99% of 5 TiB and a failed write at the
-*save* step kills a 45-hour job at the very end.
+*save* step kills a 48-hour job at the very end.
 
 **Walltime tiers.** On Killarney the requested walltime selects a node pool. Asking for more time than
 you need shrinks the pool you can land on; asking for too little kills the run at the save step, since
 the merged policy is written only after the final training step. 68 h is deliberate: it covers up to
-~125 s/step and still sits in the 3-day tier.
+~128 s/step and still sits in the 3-day tier.
 
 **`HF_HOME` vs the token.** Setting `HF_HOME` moves where `huggingface_hub` looks for its token, so a
 token saved by `huggingface-cli login` at `~/.cache/huggingface/token` becomes invisible. Use
@@ -181,5 +181,5 @@ whole result. If you point this at a different base model, check that generation
 
 ## Questions
 
-Anything unexpected in the log — especially a memory climb, or `sec` per step far off 84 — is worth a
-message before letting it burn 45 hours.
+Anything unexpected in the log — especially a memory climb, or `sec` per step far off 90 — is worth a
+message before letting it burn 48 hours.
