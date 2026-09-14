@@ -72,9 +72,10 @@ def render(kln_p, std_p, paper=False):
     ax.text(1.06, su + 0.035, r"$f(u)=u\ln u-(u-1)$", fontsize=8.5, color=C_KL, va="bottom", ha="left", zorder=7)
     ax.text(1.06, cu - 0.035, r"$f(u)=u\ln u$", fontsize=8.5, color=C_KL, va="top", ha="left", zorder=7)
     ax.axvline(1.0, color=C_KL, ls=":", lw=1.0, alpha=0.6)
-    ax.set_xlabel(r"divergence-family parameter  $\alpha$"
-                  "\n"
-                  r"($\alpha\!\to\!0$: FKL   $\alpha\!=\!1$: RKL   $\alpha\!=\!2$: $\chi^2$)")
+    ax.set_title(r"divergence-family parameter  $\alpha$"
+                 "\n"
+                 r"($\alpha\!\to\!0$: FKL   $\alpha\!=\!1$: RKL   $\alpha\!=\!2$: $\chi^2$)",
+                 fontsize="medium")
     ax.set_ylabel(r"recovery gap $\Delta_\pi$ = mean TV$(\pi_\theta \,\|\, \pi^\star)$")
     ax.set_ylim(0, 0.55)
     ax.grid(alpha=0.2)
@@ -82,7 +83,7 @@ def render(kln_p, std_p, paper=False):
     # B1: no in-figure title. Caption items → α-div generator-normalization fix; off-policy; temperature
     # β = RKL@peak{peak}; {man['n_mdp']} MDPs; ±95% CI; same Ω/π*, only the inner-term estimator differs;
     # the standard curve's α→1 jump (Ψ→1−1/u) is the artifact, the canonical well is the fix.
-    ax.legend(fontsize=8, loc="upper left")
+    ax.legend(fontsize=8, loc="lower left")
     fig.tight_layout()
     stem = f"figs/adiv_compare_p{int(round(peak*100))}{'_paper' if paper else ''}"
     for ext in ("png", "pdf"):
