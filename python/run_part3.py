@@ -316,10 +316,10 @@ def run_2x7(peak, rng, n_mdp):
 
 def fig_policy_3x7(rewards, alphas, pols, gaps, peak, sfx):
     """3x7: rows = 7 divergences, cols = exact | standard (Amari) | canonical. pi* dashed, pi_theta solid.
-    Two cells are blank by construction, each with its own reason printed in place:
-      * RKL x Amari  -- RKL's conventional generator u*log(u) IS the canonical one (= standard DPO),
-                        so an Amari RKL is not a form anyone runs; showing it would invent a baseline.
-      * euc x canon  -- euc is not an f-divergence, so it has no canonical representative.
+    One cell is blank by construction, with its reason printed in place:
+      * euc x canon  -- euc is a Bregman divergence with no f(u) generator, so no canonical form exists.
+    RKL x Amari IS shown: re-normalizing RKL to f'(1)=0 (Psi = 1 - 1/u) is not the form anyone runs, but
+    it is the control that proves RKL's recovery comes from the canonical generator, not from "being RKL".
     Column 1 is the ceiling: the closed-form inner term over all a'. The point of the row is how much
     of the gap between col 2 and col 1 the canonical representative in col 3 buys back."""
     exact_pol0, std_pol0, canon_pol0 = pols
@@ -338,9 +338,7 @@ def fig_policy_3x7(rewards, alphas, pols, gaps, peak, sfx):
             ax = axes[r, c]
             blank = None
             if variant == "canonical" and rk == "euc":
-                blank = "not an $f$-divergence"
-            elif variant == "standard" and rk == "kl":
-                blank = "$u\\log u$ is already canonical"
+                blank = "no canonical form exists"
             if blank is not None:
                 ax.add_patch(plt.Rectangle((0, 0), 1, 1, transform=ax.transAxes, facecolor="#eee",
                                            hatch="///", edgecolor="#bbb", lw=0))
