@@ -352,8 +352,9 @@ def fig_policy_3x7(rewards, alphas, pols, gaps, peak, sfx):
             for l in range(1, DEPTH):
                 ax.axvline(l * block - 0.5, color="#e6e6e6", lw=0.6)
             if rk in gp:
-                ax.text(0.97, 0.93, f"\u0394\u03c0={gp[rk][0]:.3f}", transform=ax.transAxes,
-                        ha="right", va="top", fontsize=7.5, color=COLORS[rk])
+                ax.text(0.995, 0.995, f"\u0394\u03c0={gp[rk][0]:.3f}", transform=ax.transAxes,
+                        ha="right", va="top", fontsize=6.0, color=COLORS[rk], zorder=9,
+                        bbox=dict(facecolor="white", alpha=0.72, edgecolor="none", pad=0.6))
             ax.set_xticks(centers)
             if r == len(REGKEYS) - 1:
                 ax.set_xticklabels([f"\u2113{l}" for l in range(DEPTH)], fontsize=7)
