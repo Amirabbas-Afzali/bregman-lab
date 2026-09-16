@@ -153,7 +153,8 @@ def main():
     else:
         gen_kw.update(do_sample=False)
     print(f"stop_ids={stop_ids} rep_penalty={args.rep_penalty} stop_strings={STOP_STRINGS} "
-          f"system={bool(args.system)} (eos={tok.eos_token_id}, <|im_end|>={_imend})", flush=True)
+          f"system={bool(args.system)} (eos={tok.eos_token_id}, turn-terminator stop ids="
+          f"{[i for i in stop_ids if i != tok.eos_token_id]})", flush=True)
 
     import hashlib
     tok.padding_side = "left"                        # decoder-only batched generation needs left padding
