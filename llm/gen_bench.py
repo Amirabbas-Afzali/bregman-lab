@@ -117,9 +117,18 @@ def main():
     # so generate() would run past the answer to max_new_tokens (→ degenerate repetition) unless we add
     # <|im_end|> as a stop id. (vLLM does this automatically from the chat template; HF .generate does not.)
     stop_ids = [tok.eos_token_id]
-    _imend = tok.convert_tokens_to_ids("<|im_end|>")
-    if isinstance(_imend, int) and _imend >= 0 and _imend != tok.eos_token_id:
-        stop_ids.append(_imend)
+    # A chat template normally ends the assistant turn with a special token that is NOT the model's
+    # eos, and generate() stops on eos_token_id only — so without these the model writes a perfectly
+    # good answer, emits its turn terminator, and then keeps going to max_new_tokens.
+    #   Qwen3 <|im_end|>   Gemma <end_of_turn>   Llama-3 <|eot_id|>   Phi <|end|>
+    # convert_tokens_to_ids returns the UNK id for a token outside the vocabulary, so that has to be
+    # excluded explicitly: for gemma-3-1b-it, "<|im_end|>" resolved to <unk>=3 and was being added as
+    # a stop id while the real terminator <end_of_turn> was not, leaving 68.6% of answers at the cap.
+    _unk = tok.unk_token_id
+    for _t in ("<|im_end|>", "<end_of_turn>", "<|eot_id|>", "<|end|>"):
+        _i = tok.convert_tokens_to_ids(_t)
+        if isinstance(_i, int) and _i >= 0 and _i != _unk and _i not in stop_ids:
+            stop_ids.append(_i)
     gen_kw = dict(max_new_tokens=args.max_new, pad_token_id=tok.eos_token_id, eos_token_id=stop_ids)
     if args.rep_penalty and args.rep_penalty != 1.0:   # RePO=1.05 → suppresses degenerate repetition loops
         gen_kw["repetition_penalty"] = args.rep_penalty
