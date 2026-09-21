@@ -27,3 +27,5 @@ llm/results/**/*.json
 llm/results/**/*.npz
 llm/results/*.json
 llm/results/*.npz
+venv_t0/
+llm/logs/*.out

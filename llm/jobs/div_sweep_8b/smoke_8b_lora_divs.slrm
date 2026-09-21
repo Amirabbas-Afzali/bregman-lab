@@ -1,0 +1,51 @@
+#!/bin/bash
+# SMOKE for the 5-divergence sweep: 6 steps, seed 0, both norms, no --save-policy.
+# Checks each Ω actually runs: finite loss (chi2/hel exponentiate u, so the clamp matters most there),
+# peak memory on L40S, and s/step. NOT a training result — --steps 6 changes the LR schedule, so these
+# numbers are not comparable to a full run or to each other across different --steps.
+#
+# ARRAY. idx%2 -> norm (0=amari, 1=canon); idx/2 -> div. 10 tasks = 5 divergences x 2 norms.
+# Submit FROM llm/:  sbatch jobs/div_sweep_8b/smoke_8b_lora_divs.slrm
+#
+#SBATCH --account=aip-rudner
+#SBATCH --job-name=smdiv8b
+#SBATCH --gres=gpu:l40s:1
+#SBATCH --array=0-9
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=96G
+#SBATCH --time=0:40:00
+#SBATCH --output=logs/%x-%A_%a.out
+
+set -euo pipefail
+REPO="$SLURM_SUBMIT_DIR/.."
+export HF_HOME="${HF_HOME:-/scratch/$USER/hf_cache}"
+export HF_HUB_OFFLINE=1
+export TOKENIZERS_PARALLELISM=false
+export PYTHONUNBUFFERED=1
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+
+module load StdEnv/2023 python/3.11 cuda/12.2
+source "$REPO/venv_t0/bin/activate"
+cd "$REPO/llm"
+OUT_DIR="${OUT_DIR:-/scratch/$USER/bregman-lab/llm/results/bench}"; mkdir -p "$OUT_DIR"
+export WANDB_DIR="/scratch/$USER/wandb"; mkdir -p "$WANDB_DIR"
+
+DIVS=(adiv rkl js hel chi2)
+NORMS=(amari canon)
+DIV="${DIVS[$((SLURM_ARRAY_TASK_ID / 2))]}"
+NORM="${NORMS[$((SLURM_ARRAY_TASK_ID % 2))]}"
+RUN="smoke_8b_lora_${DIV}_${NORM}_s0"
+
+echo "=== SMOKE 8B LoRA [$DIV, norm=$NORM, seed=0] 1xL40S on $(hostname) | $(date) ==="; nvidia-smi
+python stage_b_train_wandb.py \
+  --ref Qwen/Qwen3-8B-Base --policy Qwen/Qwen3-8B-Base --init-noise 0.01 \
+  --lora-r 128 --lora-alpha 128 --lora-dropout 0.05 \
+  --data data/uf_pairs_train_full.jsonl --eval-data data/uf_pairs_test.jsonl \
+  --div "$DIV" --norm "$NORM" --inner sample --step-mode token \
+  --beta 0.1 --lr 5e-6 --lr-schedule linear --warmup-ratio 0.05 --weight-decay 0.01 --adam-beta2 0.999 \
+  --steps 6 --grad-accum 64 --grad-clip 1.0 --max-len 1024 --clamp 15 \
+  --eval-n 64 --log-every 2 --eval-every 6 --seed 0 \
+  --wandb-project "Off-policy KL" --wandb-entity amir8afzali-sharif-university-of-technology \
+  --wandb-name "$RUN" \
+  --out "$OUT_DIR/smoke_lora8b_${DIV}_${NORM}_s0"
+echo "=== smoke done [$DIV, norm=$NORM] | $(date) ==="
